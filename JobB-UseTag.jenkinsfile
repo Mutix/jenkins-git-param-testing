@@ -1,0 +1,105 @@
+// Job B - Uses git parameter to accept a tag
+// This job is triggered by Job A with a newly created tag
+//
+// IMPORTANT: This must be configured as a PARAMETERIZED pipeline
+// with a git parameter named GIT_TAG
+//
+// To configure in Jenkins UI:
+// 1. Create new Pipeline job named "JobB"
+// 2. Check "This project is parameterized"
+// 3. Add Parameter → Git Parameter:
+//    - Name: GIT_TAG
+//    - Parameter Type: Tag
+//    - Repository URL: https://github.com/Mutix/jenkins-git-param-testing.git
+//    - Default Value: (leave empty or use an existing tag)
+// 4. Pipeline → Definition: Pipeline script from SCM or paste this script
+
+pipeline {
+    agent any
+
+    // Note: The GIT_TAG parameter is defined in the Jenkins UI
+    // as a Git Parameter, not here in the pipeline script
+
+    stages {
+        stage('Validate Tag Parameter') {
+            steps {
+                script {
+                    echo "=== Git Parameter Validation Test ==="
+                    echo "Received GIT_TAG parameter: ${params.GIT_TAG}"
+
+                    // This is where the validation happens
+                    // OLD CODE: Would fail here if tag not in cache
+                    // NEW CODE: Refreshes cache and succeeds
+
+                    if (!params.GIT_TAG) {
+                        error("GIT_TAG parameter is empty!")
+                    }
+
+                    echo "✅ Tag parameter validated successfully: ${params.GIT_TAG}"
+                }
+            }
+        }
+
+        stage('Checkout at Tag') {
+            steps {
+                script {
+                    echo "Checking out repository at tag: ${params.GIT_TAG}"
+
+                    // Checkout the repository at the specified tag
+                    sh """
+                        rm -rf test-repo
+                        git clone https://github.com/Mutix/jenkins-git-param-testing.git test-repo
+                        cd test-repo
+                        git checkout tags/${params.GIT_TAG}
+                        echo "Successfully checked out tag: ${params.GIT_TAG}"
+                    """
+                }
+            }
+        }
+
+        stage('Use Tag in Build') {
+            steps {
+                script {
+                    echo "Building with tag: ${params.GIT_TAG}"
+
+                    // Simulate build operations
+                    sh """
+                        cd test-repo
+                        echo "Current commit: \$(git rev-parse HEAD)"
+                        echo "Current tag: \$(git describe --tags)"
+                        echo "Building from tag: ${params.GIT_TAG}"
+                    """
+                }
+            }
+        }
+
+        stage('Verify Tag Exists') {
+            steps {
+                script {
+                    // Verify the tag actually exists in the repository
+                    sh """
+                        cd test-repo
+                        if git rev-parse ${params.GIT_TAG} >/dev/null 2>&1; then
+                            echo "✅ Tag ${params.GIT_TAG} exists in repository"
+                        else
+                            echo "❌ Tag ${params.GIT_TAG} does NOT exist in repository"
+                            exit 1
+                        fi
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo "✅ Successfully built with tag: ${params.GIT_TAG}"
+            echo "This proves the cache refresh on miss is working!"
+        }
+        failure {
+            echo "❌ Build failed - this indicates the bug is present"
+            echo "The git parameter validation rejected the newly created tag"
+        }
+    }
+}
+

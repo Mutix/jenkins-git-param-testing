@@ -1,0 +1,75 @@
+// Job A - Creates a new tag and triggers Job B
+// This simulates the scenario where a CI job creates a release tag
+// and immediately triggers a downstream build
+
+pipeline {
+    agent any
+
+    stages {
+        stage('Checkout Repository') {
+            steps {
+                script {
+                    echo "Checking out test repository"
+
+                    // Clean workspace and clone the test repository
+                    sh """
+                        rm -rf test-repo
+                        git clone https://github.com/Mutix/jenkins-git-param-testing.git test-repo
+                        cd test-repo
+                        git config user.email "test@example.com"
+                        git config user.name "Test User"
+                    """
+                }
+            }
+        }
+
+        stage('Create and Push New Tag') {
+            steps {
+                script {
+                    // Generate unique tag name
+                    def timestamp = new Date().getTime()
+                    def newTag = "test-tag-${timestamp}"
+
+                    echo "Creating new tag: ${newTag}"
+
+                    // Create and push tag
+                    sh """
+                        cd test-repo
+                        git tag ${newTag}
+                        git push origin ${newTag}
+                        echo "Successfully created and pushed tag: ${newTag}"
+                    """
+
+                    // Store tag name for downstream job
+                    env.NEW_TAG = newTag
+                }
+            }
+        }
+        
+        stage('Trigger Downstream Build') {
+            steps {
+                echo "Triggering Job B with tag: ${env.NEW_TAG}"
+
+                // This is where the bug occurs - Job B's git parameter
+                // has a stale cache that doesn't include the newly created tag
+                build(
+                    job: 'JobB',
+                    parameters: [
+                        string(name: 'GIT_TAG', value: env.NEW_TAG)
+                    ],
+                    wait: true
+                )
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo "✅ Successfully created tag ${env.NEW_TAG} and triggered downstream build"
+        }
+        failure {
+            echo "❌ Failed to create tag or trigger downstream build"
+        }
+    }
+}
+
